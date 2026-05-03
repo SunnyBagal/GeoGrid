@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>GeoGrid India</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F5;--bg2:#FFFFFF;--bg3:#F0F2F5;--sidebar:#021A54;
+  --bdr:#E2E6EC;--bdr2:#C8CFD8;
+  --t1:#1A1D23;--t2:#5A6070;--t3:#8F95A3;
+  --ts1:#CBD5E8;--ts2:#FFFFFF;
+  --acc:#3366FF;--acc-s:rgba(51,102,255,0.1);
+  --region:#FF85BB;--region-f:rgba(255,133,187,0.15);
+  --tile:#FFCEE3;--tile-f:rgba(255,206,227,0.25);
+  --grn:#00C48C;--ylw:#FFB020;--red:#FF4D4F;--pur:#7C5CFC;
+  --shd:0 1px 3px rgba(0,0,0,0.06);--shd2:0 4px 16px rgba(0,0,0,0.08);
+}
+[data-theme="dark"]{
+  --bg:#0B0F1A;--bg2:#12182A;--bg3:#1A2038;--sidebar:#080D1A;
+  --bdr:#1E2940;--bdr2:#2E3D58;
+  --t1:#E8ECF4;--t2:#8892A8;--t3:#4A5568;
+  --ts1:#8892A8;--ts2:#E8ECF4;
+  --acc:#5B8AFF;--acc-s:rgba(91,138,255,0.12);
+  --region:#FF85BB;--region-f:rgba(255,133,187,0.2);
+  --tile:#FFCEE3;--tile-f:rgba(255,206,227,0.12);
+  --grn:#00E6A0;--ylw:#FFD060;--red:#FF6B6B;--pur:#9B7FFF;
+  --shd:0 1px 3px rgba(0,0,0,0.2);--shd2:0 4px 16px rgba(0,0,0,0.3);
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--t1);transition:background .3s,color .3s}
+
+/* AUTH */
+.auth-page{display:flex;height:100vh}
+.auth-left{flex:1;background:var(--sidebar);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ts2);padding:40px;position:relative;overflow:hidden}
+.auth-left::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 50%,rgba(51,102,255,0.15) 0%,transparent 70%)}
+.auth-brand{font:700 36px 'DM Sans';letter-spacing:-.03em;position:relative;z-index:1}
+.auth-brand span{color:var(--region)}
+.auth-sub{font-size:15px;color:var(--ts1);margin-top:10px;position:relative;z-index:1;text-align:center;max-width:320px;line-height:1.6}
+.auth-right{width:480px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;background:var(--bg)}
+.auth-form{width:100%;max-width:360px}
+.auth-title{font:700 22px 'DM Sans';margin-bottom:6px}
+.auth-desc{font-size:14px;color:var(--t2);margin-bottom:28px}
+.field{margin-bottom:16px}
+.field-label{display:block;font:500 13px 'DM Sans';color:var(--t2);margin-bottom:6px}
+.field-input{width:100%;padding:11px 14px;border-radius:8px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t1);font:14px 'DM Sans';outline:none;transition:all .15s}
+.field-input:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-s)}
+.btn-auth{width:100%;padding:12px;border-radius:8px;border:none;background:var(--acc);color:#fff;font:600 14px 'DM Sans';cursor:pointer;transition:all .15s;margin-top:8px}
+.btn-auth:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.btn-auth:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.auth-switch{text-align:center;margin-top:20px;font-size:13px;color:var(--t2)}
+.auth-switch a{color:var(--acc);text-decoration:none;font-weight:600;cursor:pointer}
+.auth-err{background:rgba(255,77,79,0.1);color:var(--red);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;display:none}
+
+/* DASHBOARD */
+#app{display:none;flex-direction:column;height:100vh}
+#app.visible{display:flex}
+.header{height:52px;background:var(--sidebar);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:1000}
+.logo{font:700 16px 'DM Sans';color:#fff;display:flex;align-items:center;gap:8px}
+.logo-icon{width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,var(--acc),var(--region));display:flex;align-items:center;justify-content:center;font:700 14px 'DM Sans';color:#fff}
+.tag{font:600 9px 'IBM Plex Mono';color:var(--region);background:rgba(255,133,187,0.15);padding:2px 7px;border-radius:3px}
+.hsep{width:1px;height:20px;background:rgba(255,255,255,0.1)}
+.hstatus{display:flex;align-items:center;gap:5px;font:500 10px 'IBM Plex Mono';color:rgba(255,255,255,0.5)}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.hright{margin-left:auto;display:flex;align-items:center;gap:10px}
+.user-badge{font-size:11px;color:rgba(255,255,255,0.6);display:flex;align-items:center;gap:6px}
+.avatar{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--acc),var(--pur));display:flex;align-items:center;justify-content:center;font:600 10px 'DM Sans';color:#fff}
+.theme-toggle{width:30px;height:30px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:0;color:rgba(255,255,255,0.5);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s}
+.theme-toggle:hover{background:rgba(255,255,255,0.08);color:#fff}
+.btn-logout{font:500 11px 'IBM Plex Mono';color:rgba(255,255,255,0.4);background:0;border:1px solid rgba(255,255,255,0.08);padding:5px 10px;border-radius:5px;cursor:pointer;transition:all .15s}
+.btn-logout:hover{border-color:rgba(255,255,255,0.2);color:rgba(255,255,255,0.7)}
+.main{flex:1;display:flex;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{width:340px;min-width:340px;background:var(--bg2);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow:hidden;transition:background .3s}
+.sidebar-section{padding:16px;border-bottom:1px solid var(--bdr)}
+.section-label{font:600 11px 'DM Sans';color:var(--t3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+.input,.sel{width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bdr);background:var(--bg3);color:var(--t1);font:13px 'DM Sans';outline:none;transition:all .15s}
+.input:focus,.sel:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-s)}
+.input::placeholder{color:var(--t3)}
+.sel{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238F95A3' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px}
+.row{display:flex;gap:8px}
+.btn{border:none;font:600 12px 'DM Sans';padding:10px 18px;border-radius:8px;cursor:pointer;transition:all .15s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-p{background:var(--acc);color:#fff}
+.btn-p:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
+.btn-o{background:0;border:1px solid var(--bdr);color:var(--t2)}
+.btn-o:hover:not(:disabled){border-color:var(--bdr2);background:var(--bg3)}
+.btn-g{border-color:var(--grn)!important;color:var(--grn)!important}
+.slider-row{display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:4px}
+.slider-val{color:var(--acc);font:600 12px 'IBM Plex Mono'}
+input[type="range"]{width:100%;accent-color:var(--acc)}
+.err-msg{font-size:12px;color:var(--red);margin-top:8px}
+.tabs{display:flex;border-bottom:1px solid var(--bdr)}
+.tab{flex:1;padding:10px;background:0;border:none;color:var(--t3);font:600 11px 'DM Sans';cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;text-transform:uppercase;letter-spacing:.06em}
+.tab.active{color:var(--acc);border-bottom-color:var(--acc)}
+.tab-content{flex:1;overflow-y:auto;padding:16px}
+.sc{background:var(--bg3);border:1px solid var(--bdr);border-radius:10px;padding:14px 16px;margin-bottom:10px;transition:all .15s}
+.sc:hover{border-color:var(--bdr2)}
+.sc-l{font:600 10px 'DM Sans';color:var(--t3);text-transform:uppercase;letter-spacing:.05em}
+.sc-v{font:700 28px 'DM Sans';line-height:1.2;margin-top:2px}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.sm .sc-v{font-size:18px}
+.pbar{height:5px;background:var(--bdr);border-radius:3px;overflow:hidden;margin-top:8px}
+.pfill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--acc),var(--pur));transition:width .4s}
+.biz-row{padding:10px 12px;border-bottom:1px solid var(--bdr);cursor:pointer;transition:background .1s;border-radius:6px;margin-bottom:2px}
+.biz-row:hover{background:var(--acc-s)}
+.biz-name{font:600 13px 'DM Sans'}
+.biz-addr{font-size:11px;color:var(--t3);margin-top:2px}
+.biz-meta{display:flex;gap:8px;margin-top:4px;font-size:10px;color:var(--t2)}
+.sidebar-footer{padding:8px 16px;border-top:1px solid var(--bdr);font:500 10px 'IBM Plex Mono';color:var(--t3);display:flex;justify-content:space-between}
+.usage-bar{padding:10px 16px;background:var(--acc-s);border-bottom:1px solid var(--bdr);font-size:12px;color:var(--acc);display:none;align-items:center;gap:8px}
+.usage-bar b{font-family:'IBM Plex Mono',monospace}
+
+/* MAP */
+.map-wrap{flex:1;position:relative}
+#map{width:100%;height:100%}
+.leaflet-container{background:var(--bg)!important;transition:background .3s}
+.leaflet-control-zoom a{background:var(--bg2)!important;color:var(--t3)!important;border-color:var(--bdr)!important}
+.leaflet-control-zoom a:hover{background:var(--bg3)!important;color:var(--t1)!important}
+.map-ol{position:absolute;top:12px;left:12px;z-index:800;background:var(--bg2);border:1px solid var(--bdr);border-radius:10px;padding:10px 16px;box-shadow:var(--shd2);display:none;gap:16px;align-items:center;font-family:'IBM Plex Mono',monospace}
+.map-ol .ol-l{font:600 9px 'IBM Plex Mono';color:var(--t3);text-transform:uppercase}
+.map-ol .ol-v{font:700 16px 'DM Sans'}
+.empty-st{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.empty-st h1{font:800 42px 'DM Sans';color:var(--t3);opacity:.12;letter-spacing:-.03em}
+.empty-st p{font-size:13px;color:var(--t3);opacity:.25;margin-top:6px}
+.poly-badge{position:absolute;top:12px;right:12px;z-index:800;background:var(--bg2);border:1px solid var(--bdr);border-radius:8px;padding:6px 12px;font:500 11px 'DM Sans';color:var(--grn);display:none;box-shadow:var(--shd)}
+
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);align-items:center;justify-content:center}
+.modal-bg.vis{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--bdr);border-radius:16px;padding:32px;max-width:640px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
+.modal-title{font:700 22px 'DM Sans';margin-bottom:6px}
+.modal-desc{font:400 14px 'DM Sans';color:var(--t2);margin-bottom:24px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.plan{border:1px solid var(--bdr);border-radius:12px;padding:20px 16px;text-align:center;transition:all .15s;cursor:pointer}
+.plan:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:var(--shd2)}
+.plan.feat{border-color:var(--acc);background:var(--acc-s)}
+.plan-n{font:700 16px 'DM Sans';margin-bottom:4px}
+.plan-p{font:700 20px 'IBM Plex Mono';color:var(--acc);margin-bottom:12px}
+.plan-f{font-size:11px;color:var(--t2);line-height:1.8}
+.plan-btn{margin-top:14px;width:100%;padding:9px;border-radius:6px;border:1px solid var(--acc);background:0;color:var(--acc);font:600 12px 'DM Sans';cursor:pointer;transition:all .15s}
+.plan-btn:hover{background:var(--acc);color:#fff}
+.plan.feat .plan-btn{background:var(--acc);color:#fff;border-color:var(--acc)}
+.plan-btn:disabled{opacity:.5;cursor:wait}
+.modal-close{display:block;margin:20px auto 0;padding:8px 20px;border-radius:8px;border:1px solid var(--bdr);background:0;color:var(--t2);font:500 13px 'DM Sans';cursor:pointer}
+
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
+@media(max-width:900px){.auth-left{display:none}.auth-right{width:100%}.plans{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<!-- ═══ SIGN IN ═══ -->
+<div id="pgSignin" class="auth-page">
+  <div class="auth-left">
+    <div class="auth-brand">Geo<span>Grid</span> India</div>
+    <div class="auth-sub">Extract every business in any Indian city using real polygon boundaries and recursive grid subdivision.</div>
+  </div>
+  <div class="auth-right">
+    <div class="auth-form">
+      <div class="auth-title">Welcome back</div>
+      <div class="auth-desc">Sign in to your dashboard</div>
+      <div class="auth-err" id="siErr"></div>
+      <div class="field"><label class="field-label">Email</label><input class="field-input" type="email" id="siEmail" placeholder="admin@geogrid.com"/></div>
+      <div class="field"><label class="field-label">Password</label><input class="field-input" type="password" id="siPass" placeholder="••••••••"/></div>
+      <button class="btn-auth" id="siBtn">Sign In</button>
+      <div class="auth-switch">No account? <a id="goSU">Create one</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SIGN UP ═══ -->
+<div id="pgSignup" class="auth-page" style="display:none">
+  <div class="auth-left">
+    <div class="auth-brand">Geo<span>Grid</span> India</div>
+    <div class="auth-sub">3 free scans. No credit card needed. Powered by OpenStreetMap with real city polygon boundaries.</div>
+  </div>
+  <div class="auth-right">
+    <div class="auth-form">
+      <div class="auth-title">Create account</div>
+      <div class="auth-desc">Start with 3 free scans</div>
+      <div class="auth-err" id="suErr"></div>
+      <div class="field"><label class="field-label">Full Name</label><input class="field-input" type="text" id="suName" placeholder="John Doe"/></div>
+      <div class="field"><label class="field-label">Email</label><input class="field-input" type="email" id="suEmail" placeholder="you@example.com"/></div>
+      <div class="field"><label class="field-label">Password</label><input class="field-input" type="password" id="suPass" placeholder="At least 6 characters"/></div>
+      <button class="btn-auth" id="suBtn">Create Account</button>
+      <div class="auth-switch">Have an account? <a id="goSI">Sign in</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="app">
+  <div class="header">
+    <div class="logo"><div class="logo-icon">G</div><span>GeoGrid</span></div>
+    <span class="tag">INDIA</span><div class="hsep"></div>
+    <div class="hstatus" id="hStatus"><div class="dot" style="background:var(--grn)"></div><span>READY</span></div>
+    <div class="hright">
+      <span id="resolvedLoc" style="font:400 11px 'IBM Plex Mono';color:rgba(255,255,255,0.35)"></span>
+      <div class="user-badge"><div class="avatar" id="uAvatar">?</div><span id="uName"></span></div>
+      <button class="theme-toggle" id="themeBtn">🌙</button>
+      <button class="btn-logout" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+  <div class="usage-bar" id="usageBar"><span>⚡</span>Free plan: <b id="usageCt">0/3</b> scans used</div>
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="section-label">Target Location</div>
+        <input class="input" id="locInput" placeholder="Any city, area, or pincode in India..."/>
+        <div style="height:10px"></div>
+        <div class="section-label">Business Category</div>
+        <select class="sel" id="catSel"><option value="">Loading...</option></select>
+        <div id="searchErr" class="err-msg" style="display:none"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Algorithm Controls</div>
+        <div style="margin-bottom:10px">
+          <div class="slider-row"><span>Density Threshold</span><span class="slider-val" id="thrVal">80</span></div>
+          <input type="range" id="thrSlider" min="20" max="120" value="80"/>
+        </div>
+        <div>
+          <div class="slider-row"><span>Grid Size</span><span class="slider-val" id="gsVal">4×4</span></div>
+          <input type="range" id="gsSlider" min="2" max="8" value="4"/>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn btn-p" id="startBtn" style="flex:1" disabled>▶ Start Scan</button>
+          <button class="btn btn-o" id="resetBtn" style="width:40px;padding:0;display:flex;align-items:center;justify-content:center">↺</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="stats">Stats</button>
+        <button class="tab" data-tab="biz">Results</button>
+        <button class="tab" data-tab="log">Log</button>
+      </div>
+      <div class="tab-content" id="tabContent">
+        <div id="tab-stats">
+          <div class="sc"><div class="sc-l">Unique Leads</div><div class="sc-v" style="color:var(--acc)" id="sLeads">0</div></div>
+          <div class="sg">
+            <div class="sc sm"><div class="sc-l">Tiles Done</div><div class="sc-v" style="color:var(--grn)" id="sDone">0</div></div>
+            <div class="sc sm"><div class="sc-l">Subdivided</div><div class="sc-v" style="color:var(--pur)" id="sSub">0</div></div>
+            <div class="sc sm"><div class="sc-l">Skipped</div><div class="sc-v" style="color:var(--t3)" id="sSkip">0</div></div>
+            <div class="sc sm"><div class="sc-l">Total Tiles</div><div class="sc-v" id="sTotal">0</div></div>
+          </div>
+          <div class="sc">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <span class="sc-l">Progress</span><span style="font:600 12px 'IBM Plex Mono';color:var(--acc)" id="sProg">—</span>
+            </div>
+            <div class="pbar"><div class="pfill" id="pBar" style="width:0%"></div></div>
+          </div>
+          <div class="sc"><div class="sc-l" style="margin-bottom:8px">Density Legend</div><div style="height:8px;border-radius:4px;background:linear-gradient(90deg,var(--grn),var(--ylw),var(--region))"></div><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:4px"><span>Low / Empty</span><span>High</span></div></div>
+          <button class="btn btn-o btn-g" id="exportBtn" style="width:100%;display:none;margin-top:8px">↓ Export Leads (CSV)</button>
+        </div>
+        <div id="tab-biz" style="display:none"><div id="bizList" style="font-size:12px;color:var(--t3);text-align:center;padding:24px">No results yet.</div></div>
+        <div id="tab-log" style="display:none"><div id="logList" style="font-size:12px;color:var(--t3);text-align:center;padding:24px">No activity yet.</div></div>
+      </div>
+      <div class="sidebar-footer"><span>GeoGrid v3</span><span id="polyInfo">OSM Powered</span></div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="map-ol" id="mapOL">
+        <div><div class="ol-l">Tiles</div><div class="ol-v" id="olTiles">0</div></div>
+        <div style="width:1px;height:24px;background:var(--bdr)"></div>
+        <div><div class="ol-l">Leads</div><div class="ol-v" style="color:var(--acc)" id="olLeads">0</div></div>
+        <div id="olLive" style="display:none;align-items:center;gap:6px">
+          <div style="width:1px;height:24px;background:var(--bdr)"></div>
+          <div class="dot" style="width:7px;height:7px;background:var(--grn);animation:pulse 1s infinite"></div>
+          <span style="font:600 10px 'IBM Plex Mono';color:var(--grn)">LIVE</span>
+        </div>
+      </div>
+      <div class="poly-badge" id="polyBadge">✓ Polygon Boundary</div>
+      <div class="empty-st" id="emptySt"><h1>GEOGRID</h1><p>Search any Indian location to begin</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ UPGRADE MODAL ═══ -->
+<div class="modal-bg" id="upgradeModal">
+  <div class="modal">
+    <div class="modal-title">Upgrade Your Plan</div>
+    <div class="modal-desc">You've used all 3 free scans. Choose a plan to continue.</div>
+    <div class="plans">
+      <div class="plan" data-plan="premium">
+        <div class="plan-n">Premium</div>
+        <div class="plan-p">₹999/mo</div>
+        <div class="plan-f">50 scans/month<br>AI enrichment<br>Priority queue</div>
+        <button class="plan-btn" onclick="checkout('premium')">Upgrade</button>
+      </div>
+      <div class="plan feat" data-plan="pro">
+        <div class="plan-n">Pro</div>
+        <div class="plan-p">₹2,499/mo</div>
+        <div class="plan-f">500 scans/month<br>Full AI suite<br>API access<br>Bulk export</div>
+        <button class="plan-btn" onclick="checkout('pro')">Upgrade</button>
+      </div>
+      <div class="plan" data-plan="enterprise">
+        <div class="plan-n">Enterprise</div>
+        <div class="plan-p">₹9,999/mo</div>
+        <div class="plan-f">Unlimited scans<br>Custom categories<br>Dedicated support</div>
+        <button class="plan-btn" onclick="checkout('enterprise')">Upgrade</button>
+      </div>
+    </div>
+    <button class="modal-close" id="closeModal">Maybe later</button>
+  </div>
+</div>
+
+<script>
+const API=location.origin+"/api",IC=[20.5937,78.9629],POLL=2000;
+let map,bboxL,polyL,tileLayers=[],scanId=null,pollT=null,logs=[],user=null,tok=localStorage.getItem("gg_tok");
+
+// ─── THEME ───────────────────────────────────────
+let theme=localStorage.getItem("gg_th")||"light";
+document.documentElement.setAttribute("data-theme",theme);
+const thB=document.getElementById("themeBtn");
+thB.textContent=theme==="dark"?"☀️":"🌙";
+thB.onclick=()=>{theme=theme==="dark"?"light":"dark";document.documentElement.setAttribute("data-theme",theme);localStorage.setItem("gg_th",theme);thB.textContent=theme==="dark"?"☀️":"🌙";if(map)swapTiles()};
+let mapTL;
+function swapTiles(){if(mapTL)map.removeLayer(mapTL);const u=theme==="dark"?"https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png":"https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";mapTL=L.tileLayer(u,{maxZoom:19,noWrap:true}).addTo(map)}
+
+// ─── AUTH NAVIGATION ─────────────────────────────
+const pgSI=document.getElementById("pgSignin"),pgSU=document.getElementById("pgSignup"),appEl=document.getElementById("app");
+document.getElementById("goSU").onclick=()=>{pgSI.style.display="none";pgSU.style.display="flex"};
+document.getElementById("goSI").onclick=()=>{pgSU.style.display="none";pgSI.style.display="flex"};
+
+function authHdr(x={}){return{Authorization:`Bearer ${tok}`,"Content-Type":"application/json",...x}}
+
+// ─── SIGNUP ──────────────────────────────────────
+document.getElementById("suBtn").onclick=async()=>{
+  const n=document.getElementById("suName").value.trim(),e=document.getElementById("suEmail").value.trim(),p=document.getElementById("suPass").value;
+  const err=document.getElementById("suErr");err.style.display="none";
+  if(!n||!e||!p){err.textContent="All fields required.";err.style.display="block";return}
+  const btn=document.getElementById("suBtn");btn.disabled=true;btn.textContent="Creating...";
+  try{const r=await fetch(`${API}/auth/signup`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:n,email:e,password:p})});const d=await r.json();if(!r.ok)throw new Error(d.error);tok=d.token;localStorage.setItem("gg_tok",tok);user=d.user;showApp()
+  }catch(e){err.textContent=e.message;err.style.display="block"}finally{btn.disabled=false;btn.textContent="Create Account"}
+};
+
+// ─── SIGNIN ──────────────────────────────────────
+document.getElementById("siBtn").onclick=async()=>{
+  const e=document.getElementById("siEmail").value.trim(),p=document.getElementById("siPass").value;
+  const err=document.getElementById("siErr");err.style.display="none";
+  if(!e||!p){err.textContent="Email and password required.";err.style.display="block";return}
+  const btn=document.getElementById("siBtn");btn.disabled=true;btn.textContent="Signing in...";
+  try{const r=await fetch(`${API}/auth/signin`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:e,password:p})});const d=await r.json();if(!r.ok)throw new Error(d.error);tok=d.token;localStorage.setItem("gg_tok",tok);user=d.user;showApp()
+  }catch(e){err.textContent=e.message;err.style.display="block"}finally{btn.disabled=false;btn.textContent="Sign In"}
+};
+document.getElementById("siPass").onkeydown=e=>{if(e.key==="Enter")document.getElementById("siBtn").click()};
+document.getElementById("suPass").onkeydown=e=>{if(e.key==="Enter")document.getElementById("suBtn").click()};
+document.getElementById("logoutBtn").onclick=()=>{localStorage.removeItem("gg_tok");tok=null;user=null;appEl.classList.remove("visible");pgSI.style.display="flex";resetAll()};
+
+// Auto-login
+(async()=>{
+  if(!tok)return;
+  try{const r=await fetch(`${API}/auth/me`,{headers:{Authorization:`Bearer ${tok}`}});if(!r.ok)throw 0;const d=await r.json();user=d.user;showApp()}catch{localStorage.removeItem("gg_tok");tok=null}
+  // Check URL for payment result
+  const params=new URLSearchParams(location.search);
+  if(params.get("payment")==="success"){setTimeout(()=>{addLog("✅ Payment successful! Plan upgraded.","success");location.replace(location.pathname)},500)}
+})();
+
+function showApp(){
+  pgSI.style.display="none";pgSU.style.display="none";appEl.classList.add("visible");
+  // ── INIT MAP (once) ──────────────────────────────
+  // FIX: maxBounds prevents multiple earths, noWrap on tile layer
+  if(!map){
+    map=L.map("map",{
+      center:IC,zoom:5,zoomControl:false,attributionControl:false,
+      maxBounds:[[-90,-180],[90,180]],  // ◀ FIX: world bounds
+      maxBoundsViscosity:1.0,           // ◀ FIX: hard clamp
+      minZoom:3,                        // ◀ FIX: prevent extreme zoom-out
+    });
+    swapTiles();
+    L.control.zoom({position:"bottomright"}).addTo(map);
+    // Force size recalculation after layout renders
+    setTimeout(()=>map.invalidateSize(),100);
+    setTimeout(()=>map.invalidateSize(),500);
+  }
+  document.getElementById("uName").textContent=user.name;
+  document.getElementById("uAvatar").textContent=user.name.charAt(0).toUpperCase();
+  if(user.role!=="admin"&&user.plan==="free"){document.getElementById("usageBar").style.display="flex";document.getElementById("usageCt").textContent=`${user.scansUsed}/${user.scanLimit}`}else{document.getElementById("usageBar").style.display="none"}
+  loadCats();checkReady();
+}
+
+async function loadCats(){try{const r=await fetch(`${API}/categories`);const d=await r.json();const s=document.getElementById("catSel");s.innerHTML=d.categories.map(c=>`<option value="${c.value}">${c.icon} ${c.label}</option>`).join("");s.value="restaurant"}catch{}}
+
+// ─── CONTROLS ────────────────────────────────────
+const locI=document.getElementById("locInput"),startB=document.getElementById("startBtn"),expB=document.getElementById("exportBtn");
+locI.oninput=checkReady;locI.onkeydown=e=>{if(e.key==="Enter")startScan()};
+document.getElementById("thrSlider").oninput=function(){document.getElementById("thrVal").textContent=this.value};
+document.getElementById("gsSlider").oninput=function(){document.getElementById("gsVal").textContent=this.value+"×"+this.value};
+startB.onclick=startScan;document.getElementById("resetBtn").onclick=resetAll;
+expB.onclick=()=>{if(scanId)window.open(`${API}/scan/${scanId}/export?token=${tok}`,"_blank")};
+document.getElementById("closeModal").onclick=()=>document.getElementById("upgradeModal").classList.remove("vis");
+document.querySelectorAll(".tab").forEach(t=>{t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");document.querySelectorAll("[id^='tab-']").forEach(el=>el.style.display="none");document.getElementById("tab-"+t.dataset.tab).style.display="block"}});
+function checkReady(){startB.disabled=!locI.value.trim()||!document.getElementById("catSel").value}
+
+function addLog(m,t="info"){logs.unshift({m,t,ts:new Date().toLocaleTimeString()});if(logs.length>200)logs.pop();
+  const el=document.getElementById("logList");
+  const c={success:"var(--grn)",warn:"var(--ylw)",error:"var(--red)",info:"var(--t2)"};
+  el.innerHTML=logs.map(e=>`<div style="font-size:11px;padding:3px 6px;color:${c[e.t]||c.info};line-height:1.5"><span style="color:var(--t3);margin-right:6px;font-family:'IBM Plex Mono';font-size:10px">${e.ts}</span>${e.m}</div>`).join("")}
+
+// ─── START SCAN ──────────────────────────────────
+async function startScan(){
+  const loc=locI.value.trim(),cat=document.getElementById("catSel").value;if(!loc||!cat)return;
+  document.getElementById("searchErr").style.display="none";
+  startB.disabled=true;startB.textContent="⏳ Starting...";addLog(`Starting: "${cat}" in "${loc}"...`);setStatus("scanning","GEOCODING");
+  try{
+    const r=await fetch(`${API}/scan`,{method:"POST",headers:authHdr(),body:JSON.stringify({location:loc,category:cat,categoryLabel:document.getElementById("catSel").selectedOptions[0]?.text||cat,gridSize:+document.getElementById("gsSlider").value,threshold:+document.getElementById("thrSlider").value})});
+    const d=await r.json();
+    if(!r.ok){if(d.error==="scan_limit_reached"){document.getElementById("upgradeModal").classList.add("vis");addLog("Scan limit reached","warn");startB.textContent="▶ Start Scan";startB.disabled=false;setStatus("ready","READY");return}throw new Error(d.error)}
+    scanId=d.scanId;
+    document.getElementById("resolvedLoc").textContent=d.location||"";
+    addLog(`📍 ${d.location}`,"success");
+    addLog(`📐 ${d.activeTiles}/${d.totalTiles} tiles active (${d.skippedTiles} outside polygon)`);
+    if(d.scansRemaining!=="∞"){user.scansUsed++;document.getElementById("usageCt").textContent=`${user.scansUsed}/${user.scanLimit}`}
+
+    // ── Draw bounding box ─────────────────────────
+    if(bboxL)map.removeLayer(bboxL);if(polyL)map.removeLayer(polyL);
+    const bb=d.boundingBox;
+
+    // ── Draw POLYGON if available ─────────────────
+    if(d.hasPolygon&&d.polygon&&d.polygon.length>3){
+      // GeoJSON polygon is [lng,lat], Leaflet wants [lat,lng]
+      const latlngs=d.polygon.map(p=>[p[1],p[0]]);
+      polyL=L.polygon(latlngs,{color:"#FF85BB",weight:2.5,fillColor:"#FF85BB",fillOpacity:0.08,dashArray:"6 3"}).addTo(map);
+      map.flyToBounds(polyL.getBounds(),{padding:[40,40],duration:1});
+      document.getElementById("polyBadge").style.display="block";
+      document.getElementById("polyInfo").textContent="Polygon Boundary";
+      addLog("🗺️ Real polygon boundary loaded","success");
+    }else{
+      bboxL=L.rectangle([[bb.south,bb.west],[bb.north,bb.east]],{color:"#FF85BB",weight:2,fill:false,dashArray:"8 4"}).addTo(map);
+      map.flyToBounds([[bb.south,bb.west],[bb.north,bb.east]],{padding:[40,40],duration:1});
+      document.getElementById("polyBadge").style.display="none";
+      document.getElementById("polyInfo").textContent="Bounding Box";
+    }
+
+    document.getElementById("emptySt").style.display="none";
+    document.getElementById("mapOL").style.display="flex";
+    document.getElementById("olLive").style.display="flex";
+    startB.textContent="⏳ Scanning...";setStatus("scanning","SCANNING");startPolling();
+  }catch(e){document.getElementById("searchErr").textContent=e.message;document.getElementById("searchErr").style.display="block";addLog(e.message,"error");startB.disabled=false;startB.textContent="▶ Start Scan";setStatus("ready","READY")}
+}
+
+// ─── POLLING ─────────────────────────────────────
+function startPolling(){if(pollT)clearInterval(pollT);pollT=setInterval(poll,POLL);poll()}
+async function poll(){
+  if(!scanId)return;
+  try{
+    const[sr,tr]=await Promise.all([fetch(`${API}/scan/${scanId}`,{headers:authHdr()}),fetch(`${API}/scan/${scanId}/tiles`,{headers:authHdr()})]);
+    const{scan}=await sr.json();const{tiles}=await tr.json();
+    const p=scan.progress;
+    document.getElementById("sLeads").textContent=(p.uniqueBusinesses||0).toLocaleString();
+    document.getElementById("sDone").textContent=p.processedTiles||0;
+    document.getElementById("sSub").textContent=p.subdividedTiles||0;
+    document.getElementById("sSkip").textContent=p.skippedTiles||0;
+    document.getElementById("sTotal").textContent=p.totalTiles||0;
+    document.getElementById("olTiles").textContent=p.processedTiles||0;
+    document.getElementById("olLeads").textContent=p.uniqueBusinesses||0;
+    const active=p.totalTiles-(p.skippedTiles||0);
+    const done=(p.processedTiles||0)+(p.subdividedTiles||0);
+    const pct=active>0?Math.round(done/active*100):0;
+    document.getElementById("sProg").textContent=Math.min(pct,100)+"%";
+    document.getElementById("pBar").style.width=Math.min(pct,100)+"%";
+    renderTiles(tiles);setStatus(scan.status,scan.status.toUpperCase());
+    if(scan.status==="complete"){clearInterval(pollT);pollT=null;startB.textContent="✓ Complete";setStatus("complete","COMPLETE");document.getElementById("olLive").style.display="none";document.getElementById("sProg").textContent="100%";document.getElementById("pBar").style.width="100%";expB.style.display="block";addLog(`✅ ${p.uniqueBusinesses} leads extracted`,"success");loadBiz()}
+    else if(scan.status==="failed"){clearInterval(pollT);pollT=null;startB.textContent="▶ Start Scan";startB.disabled=false;setStatus("failed","FAILED");addLog(`❌ ${scan.error}`,"error")}
+    else if(scan.status==="enriching"){setStatus("enriching","ENRICHING");startB.textContent="🧠 Enriching..."}
+  }catch(e){addLog(`Poll: ${e.message}`,"error")}
+}
+
+// ─── RENDER TILES ────────────────────────────────
+function renderTiles(tiles){
+  tileLayers.forEach(l=>map.removeLayer(l));tileLayers=[];
+  tiles.forEach(tile=>{
+    if(tile.status==="subdivided")return;
+    // Skipped tiles: render faintly
+    if(tile.status==="skipped"){
+      const r=L.rectangle([[tile.south,tile.west],[tile.north,tile.east]],{color:"#888",weight:0.5,fillColor:"#888",fillOpacity:0.04,interactive:false});
+      r.addTo(map);tileLayers.push(r);return;
+    }
+    const t=Math.min((tile.resultCount||0)/80,1);
+    let cr,cg,cb;
+    if(t<0.5){const s=t*2;cr=0+s*255|0;cg=196-s*20|0;cb=140-s*108|0}
+    else{const s=(t-0.5)*2;cr=255;cg=176-s*43|0;cb=32+s*155|0}
+    const fc=`rgba(${cr},${cg},${cb},0.22)`,bc=`rgba(${cr},${cg},${cb},0.6)`;
+    const r=L.rectangle([[tile.south,tile.west],[tile.north,tile.east]],{
+      color:tile.status==="processing"?"#FFB020":bc,weight:1,fillColor:fc,
+      fillOpacity:tile.status==="complete"?0.3:0.1});
+    if(tile.status==="complete"&&tile.resultCount>0)r.bindTooltip(`<b>${tile.resultCount} results</b><br>Depth: ${tile.depth}`,{direction:"top"});
+    r.addTo(map);tileLayers.push(r);
+  });
+}
+
+// ─── BUSINESSES ──────────────────────────────────
+async function loadBiz(){
+  if(!scanId)return;
+  try{const r=await fetch(`${API}/scan/${scanId}/businesses?limit=100`,{headers:authHdr()});const{businesses,pagination}=await r.json();
+    const el=document.getElementById("bizList");
+    if(!businesses.length){el.innerHTML='<div style="text-align:center;padding:24px;color:var(--t3)">No businesses found.</div>';return}
+    el.innerHTML=businesses.map(b=>`<div class="biz-row" onclick="map.flyTo([${b.latitude},${b.longitude}],17,{duration:0.8})">
+      <div class="biz-name">${esc(b.name)}</div>
+      <div class="biz-addr">${esc(b.address||"No address")}</div>
+      <div class="biz-meta">${b.website?'<span>🌐</span>':''}${b.phone?'<span>📞</span>':''}${b.cuisine?`<span>🍽️ ${esc(b.cuisine.split(";")[0])}</span>`:''}
+        <span style="opacity:.6">${b.estimatedSize||"—"}</span></div></div>`).join("");
+    if(pagination.total>100)el.innerHTML+=`<div style="text-align:center;padding:12px;font-size:11px;color:var(--t3)">100 of ${pagination.total} shown. Export for all.</div>`;
+  }catch(e){addLog(`Load error: ${e.message}`,"error")}
+}
+function esc(s){const d=document.createElement("div");d.textContent=s||"";return d.innerHTML}
+
+// ─── STRIPE CHECKOUT ─────────────────────────────
+async function checkout(planId){
+  const btns=document.querySelectorAll(".plan-btn");btns.forEach(b=>{b.disabled=true;b.textContent="Loading..."});
+  try{
+    const r=await fetch(`${API}/payments/checkout`,{method:"POST",headers:authHdr(),body:JSON.stringify({planId})});
+    const d=await r.json();
+    if(d.url){window.location.href=d.url;return}// Redirect to Stripe
+    if(d.testMode||d.error){
+      // Stripe not configured — use test activation in dev
+      addLog("Stripe not configured — activating test plan","warn");
+      const r2=await fetch(`${API}/payments/activate-test`,{method:"POST",headers:authHdr(),body:JSON.stringify({planId})});
+      const d2=await r2.json();
+      if(r2.ok){user=d2.user;document.getElementById("upgradeModal").classList.remove("vis");document.getElementById("usageBar").style.display="none";addLog(`✅ Plan activated: ${planId}`,"success");checkReady()}
+      else throw new Error(d2.error);
+    }
+  }catch(e){addLog(`Payment error: ${e.message}`,"error")}finally{btns.forEach(b=>{b.disabled=false;b.textContent="Upgrade"})}
+}
+
+// ─── RESET ───────────────────────────────────────
+function resetAll(){
+  if(pollT)clearInterval(pollT);pollT=null;scanId=null;
+  tileLayers.forEach(l=>map?.removeLayer(l));tileLayers=[];
+  if(bboxL&&map){map.removeLayer(bboxL);bboxL=null}
+  if(polyL&&map){map.removeLayer(polyL);polyL=null}
+  if(map)map.flyTo(IC,5,{duration:0.7});
+  ["sLeads","sDone","sSub","sSkip","sTotal"].forEach(id=>document.getElementById(id).textContent="0");
+  document.getElementById("sProg").textContent="—";document.getElementById("pBar").style.width="0%";
+  document.getElementById("olTiles").textContent="0";document.getElementById("olLeads").textContent="0";
+  document.getElementById("mapOL").style.display="none";document.getElementById("emptySt").style.display="block";
+  document.getElementById("resolvedLoc").textContent="";document.getElementById("searchErr").style.display="none";
+  document.getElementById("olLive").style.display="none";document.getElementById("polyBadge").style.display="none";
+  document.getElementById("polyInfo").textContent="OSM Powered";
+  expB.style.display="none";
+  document.getElementById("bizList").innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:24px">No results yet.</div>';
+  logs=[];document.getElementById("logList").innerHTML='<div style="font-size:12px;color:var(--t3);text-align:center;padding:24px">No activity yet.</div>';
+  startB.textContent="▶ Start Scan";startB.disabled=false;setStatus("ready","READY");checkReady();
+}
+
+function setStatus(s,l){
+  const el=document.getElementById("hStatus"),c={ready:"var(--grn)",scanning:"var(--ylw)",enriching:"var(--pur)",complete:"var(--grn)",failed:"var(--red)"};
+  el.querySelector(".dot").style.background=c[s]||"var(--t3)";
+  el.querySelector("span").textContent=l;
+  el.querySelector(".dot").style.animation=(s==="scanning"||s==="enriching")?"pulse 1s infinite":"none";
+}
+</script>
+</body>
+</html>
