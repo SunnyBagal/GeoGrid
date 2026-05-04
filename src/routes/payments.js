@@ -116,8 +116,8 @@ router.post("/webhook", async (req, res) => {
 });
 
 router.post("/activate-test", authenticate, async (req, res) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(403).json({ error: "Not available in production" });
+  if (process.env.ENABLE_TEST_ACTIVATION !== "true" || process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "Test activation disabled. Use real Stripe checkout." });
   }
 
   const { planId } = req.body;

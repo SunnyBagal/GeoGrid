@@ -517,16 +517,9 @@ async function checkout(planId){
   try{
     const r=await fetch(`${API}/payments/checkout`,{method:"POST",headers:authHdr(),body:JSON.stringify({planId})});
     const d=await r.json();
-    if(d.url){window.location.href=d.url;return}// Redirect to Stripe
-    if(d.testMode||d.error){
-      // Stripe not configured — use test activation in dev
-      addLog("Stripe not configured — activating test plan","warn");
-      const r2=await fetch(`${API}/payments/activate-test`,{method:"POST",headers:authHdr(),body:JSON.stringify({planId})});
-      const d2=await r2.json();
-      if(r2.ok){user=d2.user;document.getElementById("upgradeModal").classList.remove("vis");document.getElementById("usageBar").style.display="none";addLog(`✅ Plan activated: ${planId}`,"success");checkReady()}
-      else throw new Error(d2.error);
-    }
-  }catch(e){addLog(`Payment error: ${e.message}`,"error")}finally{btns.forEach(b=>{b.disabled=false;b.textContent="Upgrade"})}
+    if(d.url){window.location.href=d.url;return}
+    throw new Error(d.error||"Payment is currently unavailable. Please try again later.");
+  }catch(e){addLog(`Payment error: ${e.message}`,"error");alert(`Payment error: ${e.message}`)}finally{btns.forEach(b=>{b.disabled=false;b.textContent="Upgrade"})}
 }
 
 // ─── RESET ───────────────────────────────────────
