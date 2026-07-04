@@ -14,7 +14,24 @@ router.use(authenticate);
 router.post("/", checkScanLimit, async (req, res) => {
   try {
     const { location, category, categoryLabel, gridSize = 4, threshold = 80 } = req.body;
-    if (!location || !category) return res.status(400).json({ error: "location and category required." });
+    if (!location || !category) {
+      return res.status(400).json({ 
+        error: "location and category required." 
+      });
+    }
+
+    // One scan at a time per user: concurrent scans share the same throttled
+    // Overpass lane, so they only slow each other down and double quota use.
+    const maxConcurrent = parseInt(process.env.MAX_CONCURRENT_SCANS) || 1;
+    const running = await ScanJob.countDocuments({
+      userId: req.user._id,
+      status: { $in: ["pending", "geocoding", "gridding", "scanning", "enriching"] },
+    });
+    if (running >= maxConcurrent) {
+      return res.status(409).json({
+        error: "A scan is already running. Wait for it to finish before starting another.",
+      });
+    }
 
     logger.info(`Scan: "${category}" in "${location}" by ${req.user.email}`);
 
@@ -33,6 +50,7 @@ router.post("/", checkScanLimit, async (req, res) => {
       resolvedName: geo.resolvedName,
       center: geo.center,
       polygon: geo.polygon,
+      polygons: geo.polygons,
       hasPolygon: geo.hasPolygon,
       gridSize: gs,
       threshold: Math.min(Math.max(threshold, 20), 120),
@@ -42,7 +60,7 @@ router.post("/", checkScanLimit, async (req, res) => {
 
     const gridResult = await createInitialGrid(
       scan._id, geo.bbox, gs,
-      geo.polygonSimplified
+      geo.polygons
     );
 
     const jobs = gridResult.tiles.map(t => ({
@@ -52,9 +70,9 @@ router.post("/", checkScanLimit, async (req, res) => {
         scanId: scan._id.toString(),
         category, threshold: scan.threshold,
 
-        polygon: geo.polygonSimplified ? JSON.stringify(geo.polygonSimplified) : null,
+        polygon: geo.polygons ? JSON.stringify(geo.polygons) : null,
       },
-      opts: { priority: 0 },
+      opts: { priority: 0, jobId: t._id.toString() },
     }));
     if (jobs.length > 0) await tileQueue.addBulk(jobs);
 
@@ -75,6 +93,7 @@ router.post("/", checkScanLimit, async (req, res) => {
       center: geo.center,
       hasPolygon: geo.hasPolygon,
       polygon: geo.polygon,
+      polygons: geo.polygons,
       totalTiles: gridResult.totalTiles,
       activeTiles: gridResult.pendingTiles,
       skippedTiles: gridResult.skippedTiles,
@@ -91,7 +110,7 @@ router.get("/", async (req, res) => {
   const filter = req.user.role === "admin" ? {} : { userId: req.user._id };
   const { page = 1, limit = 20 } = req.query;
   const [scans, total] = await Promise.all([
-    ScanJob.find(filter, { polygon: 0 }).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(+limit).lean(),
+    ScanJob.find(filter, { polygon: 0, polygons: 0 }).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(+limit).lean(),
     ScanJob.countDocuments(filter),
   ]);
   res.json({ scans, pagination: { page: +page, limit: +limit, total } });
@@ -137,9 +156,10 @@ router.get("/:id/export", async (req, res) => {
   const hdr = ["Name","Category","Address","City","State","Pincode","Website","Phone","Email","Description","Size","Age","Confidence","Cuisine","Brand","Hours","Lat","Lng"];
   const rows = businesses.map(b => [b.name, b.correctedCategory||b.category, b.address, b.city, b.state, b.pincode, b.website, b.phone, b.email, b.description, b.estimatedSize, b.estimatedAge, b.confidenceScore, b.cuisine, b.brand, b.openingHours, b.latitude, b.longitude].map(esc).join(","));
 
-  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="geogrid_${req.params.id}.csv"`);
-  res.send([hdr.join(","), ...rows].join("\n"));
+  // BOM so Excel decodes UTF-8 — Devanagari business names garble without it
+  res.send("\uFEFF" + [hdr.join(","), ...rows].join("\n"));
 });
 
 module.exports = router;

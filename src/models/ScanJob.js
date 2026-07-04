@@ -12,6 +12,7 @@ const scanJobSchema = new mongoose.Schema(
     center: { lat: Number, lng: Number },
 
     polygon: { type: [[Number]], default: null },
+    polygons: { type: [[[Number]]], default: null },
     hasPolygon: { type: Boolean, default: false },
 
     gridSize: { type: Number, default: 4 },

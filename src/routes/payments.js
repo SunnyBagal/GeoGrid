@@ -42,7 +42,7 @@ router.post("/checkout", authenticate, async (req, res) => {
     }
 
     const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5000";
+    const clientUrl = process.env.CLIENT_URL || "http://localhost:5050";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],

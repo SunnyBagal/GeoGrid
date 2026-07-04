@@ -1,11 +1,14 @@
 const Tile = require("../models/Tile");
 const logger = require("../utils/logger");
-const { rectIntersectsPolygon } = require("../utils/geometry");
+const { rectIntersectsAnyRing } = require("../utils/geometry");
 
 const MIN_TILE_SIZE = parseFloat(process.env.MIN_TILE_SIZE_DEG) || 0.002;
 const MAX_DEPTH = parseInt(process.env.MAX_SUBDIVISION_DEPTH) || 6;
 
-async function createInitialGrid(scanId, bbox, gridSize = 4, polygon = null) {
+// `rings` is an array of polygon outer rings ([[lng,lat], ...]) — a city can
+// be a MultiPolygon (islands, multiple districts). Tiles touching none of the
+// rings are marked skipped and never queried.
+async function createInitialGrid(scanId, bbox, gridSize = 4, rings = null) {
   const { south, north, west, east } = bbox;
   const rows = gridSize, cols = gridSize;
   const latStep = (north - south) / rows;
@@ -28,8 +31,8 @@ async function createInitialGrid(scanId, bbox, gridSize = 4, polygon = null) {
 
       const tileRect = { south: tS, north: tN, west: tW, east: tE };
 
-      const intersects = polygon
-        ? rectIntersectsPolygon(tileRect, polygon)
+      const intersects = rings && rings.length
+        ? rectIntersectsAnyRing(tileRect, rings)
         : true;
 
       const doc = {
@@ -64,7 +67,7 @@ async function createInitialGrid(scanId, bbox, gridSize = 4, polygon = null) {
   };
 }
 
-async function subdivideTile(parentTile, polygon = null) {
+async function subdivideTile(parentTile, rings = null) {
   const { scanId, south, north, west, east, depth } = parentTile;
   const newDepth = depth + 1;
   const latSpan = north - south;
@@ -91,7 +94,7 @@ async function subdivideTile(parentTile, polygon = null) {
 
   const children = childBounds.map(cb => {
     const rect = { south: cb.s, north: cb.n, west: cb.w, east: cb.e };
-    const intersects = polygon ? rectIntersectsPolygon(rect, polygon) : true;
+    const intersects = rings && rings.length ? rectIntersectsAnyRing(rect, rings) : true;
 
     return {
       scanId, depth: newDepth, parentId: parentTile._id,
@@ -102,8 +105,11 @@ async function subdivideTile(parentTile, polygon = null) {
     };
   });
 
-  await Tile.findByIdAndUpdate(parentTile._id, { status: "subdivided" });
+  // Insert children before flipping the parent, so tile stats never show a
+  // moment with zero pending tiles mid-subdivision (checkScanComplete would
+  // end the scan early).
   const tiles = await Tile.insertMany(children);
+  await Tile.findByIdAndUpdate(parentTile._id, { status: "subdivided" });
 
   const pendingChildren = tiles.filter(t => t.status === "pending");
   logger.debug(`Subdivided → ${pendingChildren.length}/4 children inside polygon at depth ${newDepth}`);

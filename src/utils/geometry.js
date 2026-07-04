@@ -78,6 +78,11 @@ function onSegment(a, b, c) {
       && Math.min(a[1], b[1]) <= c[1] && c[1] <= Math.max(a[1], b[1]);
 }
 
+function rectIntersectsAnyRing(rect, rings) {
+  if (!rings || !rings.length) return true;
+  return rings.some(ring => rectIntersectsPolygon(rect, ring));
+}
+
 function polygonBbox(ring) {
   let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
   for (const [lng, lat] of ring) {
@@ -89,26 +94,30 @@ function polygonBbox(ring) {
   return { south, north, west, east };
 }
 
-function extractOuterRing(geojson) {
+function ringsBbox(rings) {
+  let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+  for (const ring of rings) {
+    const bb = polygonBbox(ring);
+    if (bb.south < south) south = bb.south;
+    if (bb.north > north) north = bb.north;
+    if (bb.west < west) west = bb.west;
+    if (bb.east > east) east = bb.east;
+  }
+  return { south, north, west, east };
+}
+
+// Returns ALL outer rings — a MultiPolygon city (islands, split districts)
+// must keep every part, not just the largest one.
+function extractRings(geojson) {
   if (!geojson || !geojson.type) return null;
 
-  if (geojson.type === "Polygon") {
-    return geojson.coordinates[0];
-  }
+  let rings = null;
+  if (geojson.type === "Polygon") rings = [geojson.coordinates[0]];
+  else if (geojson.type === "MultiPolygon") rings = geojson.coordinates.map(p => p[0]);
 
-  if (geojson.type === "MultiPolygon") {
-
-    let best = null, bestArea = 0;
-    for (const polygon of geojson.coordinates) {
-      const ring = polygon[0];
-      const bb = polygonBbox(ring);
-      const area = (bb.north - bb.south) * (bb.east - bb.west);
-      if (area > bestArea) { bestArea = area; best = ring; }
-    }
-    return best;
-  }
-
-  return null;
+  if (!rings) return null;
+  rings = rings.filter(r => Array.isArray(r) && r.length >= 4);
+  return rings.length ? rings : null;
 }
 
 function simplifyRing(ring, tolerance = 0.001) {
@@ -148,7 +157,9 @@ function simplifyRing(ring, tolerance = 0.001) {
 module.exports = {
   pointInPolygon,
   rectIntersectsPolygon,
+  rectIntersectsAnyRing,
   polygonBbox,
-  extractOuterRing,
+  ringsBbox,
+  extractRings,
   simplifyRing,
 };

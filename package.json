@@ -8,7 +8,12 @@
     "dev": "nodemon server.js",
     "worker": "node src/workers/tileWorker.js",
     "worker:ai": "node src/workers/aiWorker.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "queue:clear": "node scripts/clearQueue.js"
+  },
+  "nodemonConfig": {
+    "watch": ["server.js", "src", ".env"],
+    "ext": "js,json,env"
   },
   "dependencies": {
     "express": "^4.18.2",

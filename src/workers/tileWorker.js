@@ -24,15 +24,38 @@ async function startWorker() {
 
       try {
         const tile = await Tile.findById(tileId);
-        if (!tile || tile.status !== "pending") return { skipped: true };
+        // "pending" on first run; "processing"/"failed" when BullMQ retries a
+        // job that crashed mid-flight — those must be reprocessed, not dropped.
+        if (!tile || !["pending", "processing", "failed"].includes(tile.status)) {
+          return { skipped: true };
+        }
 
         tile.status = "processing";
         await tile.save();
 
-        const apiResult = await searchTile(
-          { south: tile.south, north: tile.north, west: tile.west, east: tile.east },
-          category
-        );
+        const rings = parseRings(polygon);
+
+        let apiResult;
+        try {
+          apiResult = await searchTile(
+            { south: tile.south, north: tile.north, west: tile.west, east: tile.east },
+            category
+          );
+        } catch (error) {
+          // A timeout usually means the tile is too large/dense for the
+          // server right now. Split it honestly (no fabricated counts) if we
+          // can; otherwise let BullMQ retry the same tile.
+          if (error.isOverpassTimeout) {
+            const children = await subdivideTile(tile, rings);
+            if (children && children.length > 0) {
+              logger.warn(`Tile ${tileId} timed out — split into ${children.length} children`);
+              await enqueueChildren(children, scanId, category, threshold, polygon);
+              await updateScanProgress(scanId);
+              return { subdividedOnTimeout: true, children: children.length };
+            }
+          }
+          throw error;
+        }
 
         tile.resultCount = apiResult.results;
         tile.apiCallsMade = 1;
@@ -55,16 +78,10 @@ async function startWorker() {
 
         if (apiResult.results >= threshold) {
 
-          const parsedPoly = polygon ? (typeof polygon === "string" ? JSON.parse(polygon) : polygon) : null;
-          const children = await subdivideTile(tile, parsedPoly);
+          const children = await subdivideTile(tile, rings);
 
           if (children && children.length > 0) {
-            for (const child of children) {
-              await tileQueue.add("process-tile", {
-                tileId: child._id.toString(),
-                scanId, category, threshold, polygon,
-              }, { priority: child.depth });
-            }
+            await enqueueChildren(children, scanId, category, threshold, polygon);
             await updateScanProgress(scanId);
             return { subdivided: true, results: apiResult.results, children: children.length };
           }
@@ -120,7 +137,19 @@ async function startWorker() {
 
       } catch (error) {
         logger.error(`Tile ${tileId} failed:`, error.message);
-        await Tile.findByIdAndUpdate(tileId, { status: "failed", error: error.message });
+
+        const attemptsAllowed = job.opts.attempts || 1;
+        const isFinalAttempt = job.attemptsMade >= attemptsAllowed - 1;
+
+        if (isFinalAttempt) {
+          // Out of retries: mark failed and still check completion, otherwise
+          // a scan whose last tile fails hangs in "scanning" forever.
+          await Tile.findByIdAndUpdate(tileId, { status: "failed", error: error.message });
+          await updateScanProgress(scanId);
+          await checkScanComplete(scanId, category);
+        } else {
+          await Tile.findByIdAndUpdate(tileId, { status: "pending", error: error.message });
+        }
         throw error;
       }
     },
@@ -128,8 +157,84 @@ async function startWorker() {
   );
 
   worker.on("failed", (job, err) => logger.error(`Job ${job?.id} failed: ${err.message}`));
+
+  setTimeout(reconcileScans, 5000);
+  setInterval(reconcileScans, RECONCILE_INTERVAL_MS).unref();
+
   logger.info("Tile worker ready");
   return worker;
+}
+
+function parseRings(polygon) {
+  if (!polygon) return null;
+  const parsed = typeof polygon === "string" ? JSON.parse(polygon) : polygon;
+  if (!Array.isArray(parsed) || !parsed.length) return null;
+  // Legacy single-ring payloads are [[lng,lat],...]; multi-ring is [ring, ...]
+  return Array.isArray(parsed[0][0]) ? parsed : [parsed];
+}
+
+async function enqueueChildren(children, scanId, category, threshold, polygon) {
+  const jobs = children.map(child => ({
+    name: "process-tile",
+    data: { tileId: child._id.toString(), scanId, category, threshold, polygon },
+    // jobId = tileId → duplicate enqueues of the same tile are no-ops
+    opts: { priority: child.depth, jobId: child._id.toString() },
+  }));
+  await tileQueue.addBulk(jobs);
+}
+
+// Self-healing: a crash or nodemon restart can leave tiles "pending" or
+// "processing" in Mongo with no job in Redis (e.g. killed between insertMany
+// and addBulk) — the scan then hangs below 100% forever. Every sweep,
+// re-enqueue such orphans and re-check completion for active scans.
+const RECONCILE_INTERVAL_MS = 120000;
+const STALE_PROCESSING_MS = 3 * 60 * 1000;
+
+async function reconcileScans() {
+  try {
+    const active = await ScanJob.find(
+      { status: "scanning" },
+      { category: 1, threshold: 1, polygons: 1, polygon: 1 }
+    ).lean();
+    if (!active.length) return;
+
+    const jobs = await tileQueue.getJobs(["waiting", "active", "delayed", "prioritized"]);
+    const queued = new Set(jobs.filter(Boolean).map(j => j.data?.tileId));
+
+    for (const scan of active) {
+      const scanId = scan._id.toString();
+      const staleCutoff = new Date(Date.now() - STALE_PROCESSING_MS);
+      const stuck = await Tile.find({
+        scanId: scan._id,
+        $or: [
+          { status: "pending" },
+          { status: "processing", updatedAt: { $lt: staleCutoff } },
+        ],
+      }, { _id: 1 }).lean();
+
+      const orphans = stuck.filter(t => !queued.has(t._id.toString()));
+      if (orphans.length) {
+        const polygon = scan.polygons
+          ? JSON.stringify(scan.polygons)
+          : (scan.polygon ? JSON.stringify([scan.polygon]) : null);
+        await Tile.updateMany(
+          { _id: { $in: orphans.map(t => t._id) }, status: "processing" },
+          { status: "pending" }
+        );
+        await tileQueue.addBulk(orphans.map(t => ({
+          name: "process-tile",
+          data: { tileId: t._id.toString(), scanId, category: scan.category, threshold: scan.threshold, polygon },
+          // fresh jobId: the original tileId job may sit in completed history
+          opts: { jobId: `${t._id}:r${Date.now()}` },
+        })));
+        logger.warn(`Reconciler: re-enqueued ${orphans.length} orphaned tile(s) for scan ${scanId}`);
+      } else if (!stuck.length) {
+        await checkScanComplete(scanId, scan.category);
+      }
+    }
+  } catch (err) {
+    logger.error(`Reconciler error: ${err.message}`);
+  }
 }
 
 async function updateScanProgress(scanId) {
@@ -147,10 +252,17 @@ async function updateScanProgress(scanId) {
 
 async function checkScanComplete(scanId, category) {
   const stats = await getTileStats(scanId);
-  if (stats.pending === 0 && stats.processing <= 1) {
-    logger.info(`Scan ${scanId} tiles done → enrichment`);
-    await aiQueue.add("enrich-scan", { scanId, category });
-    await ScanJob.findByIdAndUpdate(scanId, { status: "enriching" });
+  // Any in-flight tile can still subdivide, so require zero of both. The
+  // atomic status flip guarantees enrichment is enqueued exactly once.
+  if (stats.pending === 0 && stats.processing === 0) {
+    const flipped = await ScanJob.findOneAndUpdate(
+      { _id: scanId, status: "scanning" },
+      { status: "enriching" }
+    );
+    if (flipped) {
+      logger.info(`Scan ${scanId} tiles done → enrichment`);
+      await aiQueue.add("enrich-scan", { scanId, category });
+    }
   }
 }
 
